@@ -12,12 +12,14 @@ import sys
 
 def main(proj_name):
     '''初始化工程为特定名称工程'''
+    data_dir = '/3/yuanyuan/%s' % proj_name
     hdfs_home = '/personal/yuanyuan/%s' % proj_name
     cmd = 'sed -i "s#%s.*=.*#%s=%s#g" %s'
     os.system(cmd % ('proj_name', 'proj_name', proj_name, 'conf/log.cfg'))
     os.system(cmd % ('app_name', 'app_name', proj_name, 'conf/main.cfg'))
+    os.system(cmd % ('DATA_DIR', 'DATA_DIR', data_dir, 'deploy.sh'))
     os.system(cmd % ('HDFS_HOME', 'HDFS_HOME', hdfs_home, 'deploy.sh'))
-    # os.system('mv ../null_project_model ../%s' % proj_name)
+    os.system('mv main.py %s_main.py' % proj_name)
     return
 
 
