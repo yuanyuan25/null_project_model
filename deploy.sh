@@ -1,7 +1,7 @@
 # !/bin/bash
 LOCAL_HOME=`pwd`
-DATA_DIR=/d3/yuanyuan/null_project
-HDFS_HOME=/personal/yuanyuan/null_project
+DATA_DIR=/d3/${USER}/null_project
+HDFS_HOME=/personal/${USER}/null_project
 
 # mkdir
 mkdir -p $DATA_DIR/data/bin_data
@@ -15,7 +15,7 @@ ln -s $DATA_DIR/data
 ln -s $DATA_DIR/log
 
 # hdfs mkdir
-# hadoop fs -mkdir -p $HDFS_HOME
+hadoop fs -mkdir -p $HDFS_HOME
 
 # sed
 # sed -i "s#work_dir.*=.*#work_dir=$LOCAL_HOME#g" run.sh

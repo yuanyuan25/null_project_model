@@ -1,7 +1,8 @@
 #!/bin/bash
-# work_dir=`pwd`
-# cd $work_dir
+set -o errexit
+work_dir=`pwd`
+cd $work_dir
 source /d1/home/yuanyuan/.bashrc
 
-# spark-submit main.py
-python main.py
+spark-submit $work_dir/main.py
+# python $work_dir/main.py

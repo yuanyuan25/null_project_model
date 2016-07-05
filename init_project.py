@@ -12,14 +12,25 @@ import sys
 
 def main(proj_name):
     '''初始化工程为特定名称工程'''
-    data_dir = '/3/yuanyuan/%s' % proj_name
-    hdfs_home = '/personal/yuanyuan/%s' % proj_name
+    data_dir = '/d3/${USER}/%s' % proj_name
+    hdfs_home = '/personal/${USER}/%s' % proj_name
     cmd = 'sed -i "s#%s.*=.*#%s=%s#g" %s'
+    print 'init log.cfg'
     os.system(cmd % ('proj_name', 'proj_name', proj_name, 'conf/log.cfg'))
-    os.system(cmd % ('app_name', 'app_name', proj_name, 'conf/main.cfg'))
+    print 'init main.cfg'
+    os.system(cmd % ('proj_name', 'proj_name', proj_name, 'conf/main.cfg'))
+    os.system(cmd % ('hdfs_dir', 'hdfs_dir', hdfs_home, 'conf/main.cfg'))
+    print 'init deploy.sh'
     os.system(cmd % ('DATA_DIR', 'DATA_DIR', data_dir, 'deploy.sh'))
     os.system(cmd % ('HDFS_HOME', 'HDFS_HOME', hdfs_home, 'deploy.sh'))
+    print 'init main.py'
     os.system('mv main.py %s_main.py' % proj_name)
+    print 'init page_show'
+    os.system('mv show_result/show.py show_result/show_%s.py' % proj_name)
+    os.system('mv show_result/show.html show_result/show_%s.html' % proj_name)
+    print 'init run.sh'
+    os.system('sed -i "s#main#%s_main#g" %s' % (proj_name, 'run.sh'))
+    print 'end!'
     return
 
 
