@@ -6,7 +6,7 @@ info:
 
 import sys
 sys.path.append('./modules')
-from test_spark import A
+from spark_test import A
 from spark_lib import init_spark, release_spark
 from send_email import send_html_mail
 from safe_mad_call import safe_mad_call
