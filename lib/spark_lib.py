@@ -1,29 +1,11 @@
 #!/usr/bin/env python
 # encoding:utf8
 '''
-spark 初始化
-通过配置文件进行初始化，默认配置文件位置为：
-    path:       conf/main.cfg
-    section:    [SPARK]
-
-spark配置文件格式：
-    [SPARK]
-    master = xxx(必须, 值不为空)
-    app_name = xxx(必须, 值不为空)
-    files = xxx, yyy...(必须，值可为空)
-    zzz = xxx
-
-    其他参数命名方式：
-        若，spark配置的原名称为：spark.xxx.yyy
-        则，[SPARK]中配置项名称：xxx_yyy(区分大小写)
-        example:
-            原名称：spark.akka.frame.Size
-            配置项：akka_frame_Size = 128
-
-by: yuanyuan
+spark lib库函数，封装了通用的一些接口
 '''
 import os
 import re
+import glob
 import timeutil
 import awesome_hdfs
 import json
@@ -31,8 +13,6 @@ from ConfigParser import SafeConfigParser
 from pyspark import SparkContext, SparkConf
 from pyspark import SparkFiles
 
-
-__author__ = 'yuanyuan'
 
 __all__ = ['init_spark', 'release_spark', 'get_file_path',
            'save_rdd_to_hdfs', 'save_rdd_by_cfg', 'spark_read_hdfs']
@@ -50,7 +30,26 @@ class Color(object):
 
 
 def get_spark_sc(main_cfg):
-    '''配置spark'''
+    '''
+    spark 初始化
+    通过配置文件进行初始化，默认配置文件位置为：
+        path:       conf/main.cfg
+        section:    [SPARK]
+
+    spark配置文件格式：
+        [SPARK]
+        master = xxx(必须, 值不为空)
+        app_name = xxx(必须, 值不为空)
+        files = xxx, yyy...(必须，值可为空)
+        zzz = xxx
+
+        其他参数命名方式：
+            若，spark配置的原名称为：spark.xxx.yyy
+            则，[SPARK]中配置项名称：xxx_yyy(区分大小写)
+            example:
+                原名称：spark.akka.frame.Size
+                配置项：akka_frame_Size = 128
+    '''
     default_options = set(main_cfg.defaults())
     spark_options = set(main_cfg.options('SPARK')) - default_options
 
@@ -70,6 +69,27 @@ def get_spark_sc(main_cfg):
     spark_sc = SparkContext(conf=spark_cfg)
 
     return spark_sc
+
+
+def extend_re_path(path_lst):
+    '''检测路径中是否存在通配符、文件夹
+    若有通配符则按通配符匹配，文件夹则加入文件夹下全部文件
+    '''
+    extend_path_lst = []
+    for path in path_lst:
+        if os.path.isdir(path):
+            file_lst = os.listdir(path)
+            file_path_lst = [os.path.join(path, fname)
+                             for fname in file_lst]
+            file_path_lst = [fpath for fpath in file_path_lst
+                             if os.path.isfile(fpath)]
+        else:
+            file_path_lst = glob.glob(path)
+            file_path_lst = [fpath for fpath in file_path_lst
+                             if os.path.isfile(fpath)]
+        extend_path_lst.extend(file_path_lst)
+
+    return extend_path_lst
 
 
 def init_spark(conf='conf/main.cfg'):
@@ -97,6 +117,7 @@ def init_spark(conf='conf/main.cfg'):
                         '/lib/python_lib/timeutil.py',
                         '/lib/python_lib/spark_lib.py']
     files.extend(additional_files)
+    files = extend_re_path(files)
     for fname in files:
         spark_sc.addFile(fname)
     return spark_sc
@@ -148,9 +169,10 @@ def rdd_to_json(items):
 
 def rdd_to_str(items):
     '''rdd转成str
-    output: key\tvalue
+    items:(item1, item2, item3...)
+    output: item1\titem2\titem3...
     '''
-    output_str = '%s\t%s' % (items[0], items[1])
+    output_str = '\t'.join([str(item) for item in items])
     return output_str
 
 
@@ -234,7 +256,7 @@ def check_input_path(input_lst, check_existance):
     '''
     valid_input_path = []
     total = len(input_lst)
-    print '%sChecking path num:%s %s' % (Color.green, total, Color.white)
+    # print '%sChecking path num:%s %s' % (Color.green, total, Color.white)
     if check_existance:
         for idx, input in enumerate(input_lst):
             if not awesome_hdfs.exist(input):
