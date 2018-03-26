@@ -420,28 +420,24 @@ class A(object):
         return
 
     @staticmethod
-    def parse_lda(line):
-        json_data = json.loads(line.strip())
-        topic = json_data['topic']
-        pid = json_data['pid']
-        flag = 0
-        for item in topic:
-            if (item[0] > 2147483647) or (item[1] > 2147483647):
-                flag = 1
-        if pid > 2147483647:
-            flag = 1
-        if flag:
-            return line
-        return ''
+    def parse_log(line):
+        tokens = line.strip().split(' ')
+        if 'IN-JSON' not in line:
+            return ()
+        time = tokens[1]
+        if time < '01:00:00' or time > '02:00:00':
+            return ()
+
+        return (time, 1)
 
     @classmethod
-    def test_int(cls):
-        hdfs_path = '/personal/fengpengfei/light_lda/lda_result/pid2topic'
+    def test_tps(cls):
+        hdfs_path = '/groups/reco/recosys_log/2018-03-27'
         data = spark_lib.read_hdfs(cls.sc, hdfs_path)\
-            .map(cls.parse_lda).filter(None).collect()
+            .map(cls.parse_log).filter(None).reduceByKey(add).collectAsMap()
         print len(data)
-        if len(data) > 0:
-            print data
+        lst = sorted(data.iteritems(), key=lambda x:x[1])
+        print lst[-50:]
         return
 
     @classmethod
@@ -452,7 +448,7 @@ class A(object):
         # cls.merge_feed_data()
         # cls.get_active_custid()
         # cls.test_json()
-        cls.test_int()
+        cls.test_tps()
         return
 
 def main():
