@@ -7,6 +7,8 @@ sys.path.append('.')
 import spark_lib
 import json
 import urlparse
+import awesome_hdfs
+import random
 from util import URLUtil
 from operator import add
 from pyspark.mllib.recommendation import Rating
@@ -14,13 +16,20 @@ from pyspark.mllib.recommendation import Rating
 PERM_PATH = '/groups/ddclick/perm_cust/result'
 PROD_CORE = '/groups/reco/reco_job_base_data/put_files_position/base_products_core_insell.dat'
 PROD_CATE = '/groups/reco/reco_job_base_data/put_files_position/base_category.dat'
-CLICK_DAILY_PATH = '/groups/reco/click_daily_pull/{date:-1:-90:-}'
-HDFS_PATH = '/groups/reco/reco_arch/filter_layer/personal_cate_reco/test_a/result_data'
+CLICK_DAILY_PATH = '/groups/reco/click_daily_pull/{date:-1:-7:-}'
+HDFS_PATH = '/groups/reco/reco_arch/merge_layer/prefer_pids/test_a/result_data'
 # HDFS_PATH = '/personal/yuanyuan/update_user_label_to_es/result_data'
 PC_CLICK_PATH = '/share/comm/ddclick/{date:-1:-90:-}/ddclick_product/'
 APP_CLICK_PATH = '/share/comm/kafka/client/{date:-1:-90:-}/*'
 H5_CLICK_PATH = '/share/comm/kafka/wap/{date:-1:-90:-}/*'
 SAVE_HDFS = '/personal/yuanyuan/test/perm'
+INSELL_PID_PATH = '/personal/yuanyuan/test/insell_pids'
+ALS_PATH = '/groups/reco/reco_arch/reco_unit_layer/user_matrix_factorization_data/User_reco_pid_pv_%s'
+ALS_EXT_PATH = '/groups/reco/reco_arch/reco_unit_layer/user_matrix_factorization_data/User_reco_cate_pids'
+FEEDID2PID_PATH = '/personal/yuanyuan/feed_reco/feedid2pid.dat'
+FEEDINFO_PATH = '/personal/yuanyuan/feed_reco/feed_info.dat'
+FEED_HDFS_PATH = '/personal/yuanyuan/feed_reco/feed_info_merge'
+FEED_LOCAL_PATH = '/d1/home/yuanyuan/base_data/feed_info_merge.dat'
 
 
 class A(object):
@@ -169,7 +178,7 @@ class A(object):
         return (uid, '\t'.join(reco_list))
 
     @classmethod
-    def test(cls):
+    def test_perm_num(cls):
         perm_rdd = spark_lib.spark_read_hdfs(cls.sc, PERM_PATH)\
                             .map(cls.parse_perm).filter(None)
 
@@ -205,7 +214,7 @@ class A(object):
         '''
         all_dict = spark_lib.spark_read_hdfs(cls.sc, H5_CLICK_PATH)\
                             .map(cls.parse_h5_click).filter(None)\
-                            .coleasce(1200).reduceByKey(add).count()
+                            .coalesce(1200).reduceByKey(add).count()
 
         print 'h5 num:', all_dict
         return
@@ -234,6 +243,217 @@ class A(object):
         '''
         return
 
+    @staticmethod
+    def extract_perm(line):
+        perm = line.strip().split('\t')[0]
+        return (len(perm), 1)
+
+    @classmethod
+    def test_als(cls):
+        num = spark_lib.read_hdfs(cls.sc, HDFS_PATH).map(cls.extract_perm).reduceByKey(add).collectAsMap()
+        print num
+        num = spark_lib.read_hdfs(cls.sc, ALS_EXT_PATH).map(cls.extract_perm).reduceByKey(add).collectAsMap()
+        print num
+        num = spark_lib.read_hdfs(cls.sc, ALS_PATH % 'babycloth').map(cls.extract_perm).reduceByKey(add).collectAsMap()
+        print num
+        num = spark_lib.read_hdfs(cls.sc, ALS_PATH % 'mancloth').map(cls.extract_perm).reduceByKey(add).collectAsMap()
+        print num
+        num = spark_lib.read_hdfs(cls.sc, ALS_PATH % 'motherbaby').map(cls.extract_perm).reduceByKey(add).collectAsMap()
+        print num
+        num = spark_lib.read_hdfs(cls.sc, ALS_PATH % 'womancloth').map(cls.extract_perm).reduceByKey(add).collectAsMap()
+        print num
+        num = spark_lib.read_hdfs(cls.sc, ALS_PATH % 'outside').map(cls.extract_perm).reduceByKey(add).collectAsMap()
+        print num
+        return
+
+    @staticmethod
+    def extract_pid(line):
+        tokens = line.strip().split('\t')
+        pid = int(tokens[0])
+        sale = int(tokens[3])
+        cpath = tokens[7]
+        if not cpath.startswith('01'):
+            return ()
+        return (pid, sale)
+
+
+    @staticmethod
+    def filter_pids(item):
+        insell_set = INSELL_SET.value
+        pid = item[0]
+        sale = item[1]
+        if pid not in insell_set:
+            return False
+        if sale < 10:
+            return False
+        return True
+
+    @staticmethod
+    def extract_click_pid(line):
+        tokens = line.strip().split('\t')
+        try:
+            pid = int(tokens[2])
+        except Exception:
+            return ()
+        return (pid, 1)
+
+    @staticmethod
+    def extract_click_uid(line):
+        tokens = line.strip().split('\t')
+        try:
+            uid = int(tokens[1])
+        except Exception:
+            return ()
+        if not uid:
+            return ()
+        return (uid, 1)
+
+    @classmethod
+    def extract_insell_pid(cls):
+        rdd = spark_lib.read_hdfs(cls.sc, PROD_CORE)\
+                .map(lambda line:int(line.strip().split('\t')[0]))\
+                .collect()
+        print 'length:', len(rdd)
+        global INSELL_SET
+        INSELL_SET = cls.sc.broadcast(set(rdd))
+
+        # spark_lib.save2hdfs(rdd, INSELL_PID_PATH)
+        # awesome_hdfs.getmerge(INSELL_PID_PATH, '~/base_data/insell_pids.dat')
+        return
+
+    @classmethod
+    def extract_hot_pid(cls):
+        rdd = spark_lib.read_hdfs(cls.sc, CLICK_DAILY_PATH)\
+            .map(cls.extract_click_pid).filter(None).reduceByKey(add)\
+            .filter(cls.filter_pids).collectAsMap()
+        print 'length:', len(rdd)
+        pid_list = sorted(rdd.iteritems(), key=lambda x: x[1], reverse=True)[:30000]
+        print 'length:', len(pid_list)
+        with open('/d1/home/yuanyuan/base_data/hot_pids.dat', 'w') as fp_hot:
+            for pid in pid_list:
+                print >> fp_hot, pid[0]
+
+        # spark_lib.save2hdfs(rdd, INSELL_PID_PATH)
+        # awesome_hdfs.getmerge(INSELL_PID_PATH, '~/base_data/insell_pids.dat')
+        return pid_list
+
+    @staticmethod
+    def extract_feedid2pid(line):
+        tokens = line.strip().split('\t')
+        if len(tokens)<2:
+            return ()
+        fid = tokens[0]
+        pid = int(tokens[1])
+        return (fid, [pid])
+
+    @staticmethod
+    def extract_feed_info(line):
+        tokens = line.strip().split('\t')
+        if not tokens:
+            return ()
+        feed_id = tokens[0]
+        ori_id = tokens[1]
+        if not ori_id:
+            return ()
+        title = tokens[2]
+        img_url = tokens[3]
+        feed_type = tokens[4]
+        feed_name = tokens[5]
+
+        return (ori_id, [feed_id, title, img_url, feed_type, feed_name])
+
+    @staticmethod
+    def transfid2pid(item):
+        fid2pid_dict = FID2PID_MAP.value
+        fid, value = item
+        pid = fid2pid_dict.get(fid, [])
+        if not pid:
+            return ()
+        pid = random.choice(pid)
+        return (pid, str(value))
+
+
+    @classmethod
+    def merge_feed_data(cls):
+        feedid2pid_dict = spark_lib.read_hdfs(cls.sc, FEEDID2PID_PATH)\
+            .map(cls.extract_feedid2pid).filter(None)\
+            .reduceByKey(add).collectAsMap()
+        print "length:", len(feedid2pid_dict)
+        global FID2PID_MAP
+        FID2PID_MAP = cls.sc.broadcast(feedid2pid_dict)
+        feed_info_rdd = spark_lib.read_hdfs(cls.sc, FEEDINFO_PATH)\
+            .map(cls.extract_feed_info).filter(None)\
+            .map(cls.transfid2pid).filter(None)
+
+        spark_lib.save2hdfs(feed_info_rdd, FEED_HDFS_PATH)
+        awesome_hdfs.getmerge(FEED_HDFS_PATH, FEED_LOCAL_PATH)
+        return
+
+    @classmethod
+    def get_active_custid(cls):
+        uid_dict = spark_lib.read_hdfs(cls.sc, CLICK_DAILY_PATH)\
+            .map(cls.extract_click_uid).filter(None)\
+            .reduceByKey(add).filter(lambda x: x[1]>5).collectAsMap()
+        pid_list = sorted(uid_dict.iteritems(), key=lambda x: x[1], reverse=True)
+        print pid_list[1]
+        if len(pid_list) > 10000:
+            pid_list = pid_list[:10000]
+        print 'length:', len(pid_list)
+        with open('/d1/home/yuanyuan/base_data/active_uids.dat', 'w') as fp_active:
+            for pid in pid_list:
+                print >> fp_active, pid[0]
+
+        return
+
+    @staticmethod
+    def parse_json(line):
+        tokens = line.strip().split('\t')
+        a = json.loads(tokens[0])
+        return a
+
+    @classmethod
+    def test_json(cls):
+        hdfs_path = '/groups/reco/readdp/category_info.json'
+        rdd = spark_lib.read_hdfs(cls.sc, hdfs_path)\
+            .map(cls.parse_json)
+        print rdd.take(1)
+        return
+
+    @staticmethod
+    def parse_lda(line):
+        json_data = json.loads(line.strip())
+        topic = json_data['topic']
+        pid = json_data['pid']
+        flag = 0
+        for item in topic:
+            if (item[0] > 2147483647) or (item[1] > 2147483647):
+                flag = 1
+        if pid > 2147483647:
+            flag = 1
+        if flag:
+            return line
+        return ''
+
+    @classmethod
+    def test_int(cls):
+        hdfs_path = '/personal/fengpengfei/light_lda/lda_result/pid2topic'
+        data = spark_lib.read_hdfs(cls.sc, hdfs_path)\
+            .map(cls.parse_lda).filter(None).collect()
+        print len(data)
+        if len(data) > 0:
+            print data
+        return
+
+    @classmethod
+    def test(cls):
+        # cls.test_als()
+        # cls.extract_insell_pid()
+        # cls.extract_hot_pid()
+        # cls.merge_feed_data()
+        # cls.get_active_custid()
+        # cls.test_json()
+        cls.test_int()
+        return
 
 def main():
     from common.spark_init import init_spark
