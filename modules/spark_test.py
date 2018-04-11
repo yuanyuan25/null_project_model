@@ -17,7 +17,8 @@ PERM_PATH = '/groups/ddclick/perm_cust/result'
 PROD_CORE = '/groups/reco/reco_job_base_data/put_files_position/base_products_core_insell.dat'
 PROD_CATE = '/groups/reco/reco_job_base_data/put_files_position/base_category.dat'
 CLICK_DAILY_PATH = '/groups/reco/click_daily_pull/{date:-1:-7:-}'
-HDFS_PATH = '/groups/reco/reco_arch/merge_layer/prefer_pids/test_a/result_data'
+MERGE_PATH = '/groups/reco/reco_arch/merge_layer/prefer_pids/test_a/result_data'
+FILTER_PATH = '/groups/reco/reco_arch/filter_layer/alsobuy/test_a/result_data'
 # HDFS_PATH = '/personal/yuanyuan/update_user_label_to_es/result_data'
 PC_CLICK_PATH = '/share/comm/ddclick/{date:-1:-90:-}/ddclick_product/'
 APP_CLICK_PATH = '/share/comm/kafka/client/{date:-1:-90:-}/*'
@@ -44,6 +45,17 @@ class A(object):
     @staticmethod
     def add(x):
         return x+2
+
+    @staticmethod
+    def parse_reco_and_seach(line):
+        try:
+            pid, reco_info = line.strip().split('\t')
+            reco = json.loads(reco_info)
+        except Exception:
+            return ()
+        if pid != '1280268076':
+            return None
+        return line
 
     @staticmethod
     def parse_reco(line):
@@ -441,6 +453,13 @@ class A(object):
         return
 
     @classmethod
+    def search_pid(cls):
+        data = spark_lib.read_hdfs(cls.sc, FILTER_PATH)\
+            .map(cls.parse_reco_and_seach).filter(None).collect()
+        print data
+        return
+
+    @classmethod
     def test(cls):
         # cls.test_als()
         # cls.extract_insell_pid()
@@ -448,7 +467,8 @@ class A(object):
         # cls.merge_feed_data()
         # cls.get_active_custid()
         # cls.test_json()
-        cls.test_tps()
+        # cls.test_tps()
+        cls.search_pid()
         return
 
 def main():
