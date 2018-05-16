@@ -18,7 +18,8 @@ PROD_CORE = '/groups/reco/reco_job_base_data/put_files_position/base_products_co
 PROD_CATE = '/groups/reco/reco_job_base_data/put_files_position/base_category.dat'
 CLICK_DAILY_PATH = '/groups/reco/click_daily_pull/{date:-1:-7:-}'
 MERGE_PATH = '/groups/reco/reco_arch/merge_layer/prefer_pids/test_a/result_data'
-FILTER_PATH = '/groups/reco/reco_arch/filter_layer/alsobuy/test_a/result_data'
+# FILTER_PATH = '/groups/reco/reco_arch/filter_layer/alsobuy/test_a/result_data'
+FILTER_PATH = '/personal/yuanyuan/reco_arch/filter_layer/alsobuy/test_a/result_data'
 # HDFS_PATH = '/personal/yuanyuan/update_user_label_to_es/result_data'
 PC_CLICK_PATH = '/share/comm/ddclick/{date:-1:-90:-}/ddclick_product/'
 APP_CLICK_PATH = '/share/comm/kafka/client/{date:-1:-90:-}/*'
@@ -31,6 +32,8 @@ FEEDID2PID_PATH = '/personal/yuanyuan/feed_reco/feedid2pid.dat'
 FEEDINFO_PATH = '/personal/yuanyuan/feed_reco/feed_info.dat'
 FEED_HDFS_PATH = '/personal/yuanyuan/feed_reco/feed_info_merge'
 FEED_LOCAL_PATH = '/d1/home/yuanyuan/base_data/feed_info_merge.dat'
+OFFLINE_KPI_DATA = ''
+RECOSYS_LOG = '/groups/reco/recosys_log/{date:-1:-30:-}'
 
 
 class A(object):
@@ -291,11 +294,8 @@ class A(object):
 
     @staticmethod
     def filter_pids(item):
-        insell_set = INSELL_SET.value
         pid = item[0]
         sale = item[1]
-        if pid not in insell_set:
-            return False
         if sale < 10:
             return False
         return True
@@ -323,14 +323,10 @@ class A(object):
     @classmethod
     def extract_insell_pid(cls):
         rdd = spark_lib.read_hdfs(cls.sc, PROD_CORE)\
-                .map(lambda line:int(line.strip().split('\t')[0]))\
-                .collect()
-        print 'length:', len(rdd)
-        global INSELL_SET
-        INSELL_SET = cls.sc.broadcast(set(rdd))
+                .map(lambda line: line.strip().split('\t')[0])
 
-        # spark_lib.save2hdfs(rdd, INSELL_PID_PATH)
-        # awesome_hdfs.getmerge(INSELL_PID_PATH, '~/base_data/insell_pids.dat')
+        spark_lib.save2hdfs(rdd, INSELL_PID_PATH, outformat="origin")
+        awesome_hdfs.getmerge(INSELL_PID_PATH, '~/base_data/insell_pids.dat')
         return
 
     @classmethod
@@ -437,14 +433,14 @@ class A(object):
         if 'IN-JSON' not in line:
             return ()
         time = tokens[1]
-        if time < '01:00:00' or time > '02:00:00':
+        if time < '04:00:00' or time > '12:00:00':
             return ()
 
         return (time, 1)
 
     @classmethod
     def test_tps(cls):
-        hdfs_path = '/groups/reco/recosys_log/2018-03-27'
+        hdfs_path = '/groups/reco/recosys_log/2018-04-20'
         data = spark_lib.read_hdfs(cls.sc, hdfs_path)\
             .map(cls.parse_log).filter(None).reduceByKey(add).collectAsMap()
         print len(data)
@@ -460,6 +456,59 @@ class A(object):
         return
 
     @classmethod
+    def check_kpi(cls):
+        data = spark_lib.read_hdfs(cls.sc, OFFLINE_KPI_DATA)\
+            .map(cls.parse_kpi_data).filter(None).collect()
+        return
+
+    @staticmethod
+    def parse_recosys_log(line):
+        if 'OUT-JSON' not in line:
+            return ()
+        tokens = line.strip().split('OUT-JSON')
+        if len(tokens) != 2:
+            return ()
+        head, out_info = tokens
+        head_lst = head.split(' ')
+        date = head_lst[0][1:].replace('/', '')[4:]
+        time = head_lst[1].replace(':', '')[:-2]
+        try:
+            out = json.loads(out_info.strip())
+        except:
+            return ()
+
+        if out['isTest']:
+            return ()
+
+        key = '%s%s_%s' % (date, time, out['method'])
+        value = (out['total_count'], 1)
+
+        return (key, value)
+
+    @classmethod
+    def check_reco_log_out(cls):
+        data = spark_lib.read_hdfs(cls.sc, RECOSYS_LOG)\
+            .map(cls.parse_recosys_log).filter(None)\
+            .reduceByKey(lambda x,y:(x[0]+y[0], x[1]+y[1]))
+        time_module = data.collectAsMap()
+        time_all = data.map(lambda x:(x[0].split('_')[0], x[1]))\
+            .reduceByKey(lambda x,y:(x[0]+y[0], x[1]+y[1]))\
+            .collectAsMap()
+
+        time_module_lst = sorted(time_module.iteritems(), key=lambda x:x[0])
+        time_all_lst = sorted(time_all.iteritems(), key=lambda x:x[0])
+        with open('time_module.dat', 'w') as fp_m:
+            for item in time_module_lst:
+                key, (sum_out, count) = item
+                print>> fp_m, '%s,%d,%s,%s' % (key, sum_out*1.0/count, sum_out, count)
+        with open('time_all.dat', 'w') as fp_m:
+            for item in time_all_lst:
+                key, (sum_out, count) = item
+                print>> fp_m, '%s,%d,%s,%s' % (key, sum_out*1.0/count, sum_out, count)
+
+        return
+
+    @classmethod
     def test(cls):
         # cls.test_als()
         # cls.extract_insell_pid()
@@ -468,7 +517,9 @@ class A(object):
         # cls.get_active_custid()
         # cls.test_json()
         # cls.test_tps()
-        cls.search_pid()
+        # cls.search_pid()
+        # cls.check_kpi()
+        cls.check_reco_log_out()
         return
 
 def main():
